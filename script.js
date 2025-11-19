@@ -8,6 +8,15 @@ const selectedProductsList = document.getElementById("selectedProductsList");
 /* Array to store selected products */
 let selectedProducts = [];
 
+/* Array to store conversation history for context */
+let conversationHistory = [
+  {
+    role: "system",
+    content:
+      "You are a professional beauty advisor for L'Oréal products. Help users with skincare, haircare, makeup, fragrance, and beauty routines. Provide helpful, accurate advice based on the conversation context. Only answer questions related to beauty, skincare, haircare, makeup, and wellness topics.",
+  },
+];
+
 /* Show initial placeholder until user selects a category */
 productsContainer.innerHTML = `
   <div class="placeholder-message">
@@ -33,6 +42,9 @@ function displayProducts(products) {
         <h3>${product.name}</h3>
         <p>${product.brand}</p>
       </div>
+      <button class="info-btn" data-product-id="${product.id}" aria-label="View product details">
+        <i class="fa-solid fa-info-circle"></i>
+      </button>
     </div>
   `
     )
@@ -41,9 +53,23 @@ function displayProducts(products) {
   /* Add click handlers to all product cards */
   const productCards = document.querySelectorAll(".product-card");
   productCards.forEach((card) => {
-    card.addEventListener("click", () =>
-      toggleProductSelection(card, products)
-    );
+    card.addEventListener("click", (e) => {
+      /* Don't toggle selection if clicking the info button */
+      if (!e.target.closest(".info-btn")) {
+        toggleProductSelection(card, products);
+      }
+    });
+  });
+
+  /* Add click handlers to info buttons */
+  const infoButtons = document.querySelectorAll(".info-btn");
+  infoButtons.forEach((button) => {
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const productId = Number(button.getAttribute("data-product-id"));
+      const product = products.find((p) => p.id === productId);
+      showProductModal(product);
+    });
   });
 }
 
@@ -120,6 +146,148 @@ function removeProduct(productId) {
   updateSelectedProductsDisplay();
 }
 
+/* Show product description in modal */
+function showProductModal(product) {
+  const modal = document.getElementById("productModal");
+  const modalBody = document.getElementById("modalBody");
+
+  /* Populate modal with product information */
+  modalBody.innerHTML = `
+    <div class="modal-product">
+      <img src="${product.image}" alt="${product.name}">
+      <h3>${product.name}</h3>
+      <p class="modal-brand">${product.brand}</p>
+      <p class="modal-description">${product.description}</p>
+    </div>
+  `;
+
+  /* Show the modal */
+  modal.classList.add("show");
+}
+
+/* Close modal when clicking close button or outside modal */
+const modal = document.getElementById("productModal");
+const modalClose = document.getElementById("modalClose");
+
+modalClose.addEventListener("click", () => {
+  modal.classList.remove("show");
+});
+
+modal.addEventListener("click", (e) => {
+  /* Close if clicking the backdrop (not the modal content) */
+  if (e.target === modal) {
+    modal.classList.remove("show");
+  }
+});
+
+/* Close modal with Escape key */
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && modal.classList.contains("show")) {
+    modal.classList.remove("show");
+  }
+});
+
+/* Generate personalized routine from selected products */
+const generateRoutineBtn = document.getElementById("generateRoutine");
+
+generateRoutineBtn.addEventListener("click", async () => {
+  /* Check if any products are selected */
+  if (selectedProducts.length === 0) {
+    chatWindow.innerHTML += `<div class="message system-message">Please select at least one product to generate a routine.</div>`;
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+    return;
+  }
+
+  /* Prepare the product data to send to OpenAI */
+  const productsData = selectedProducts.map((product) => ({
+    name: product.name,
+    brand: product.brand,
+    category: product.category,
+    description: product.description,
+  }));
+
+  /* Create the routine generation message */
+  const routineRequest = `Create a personalized beauty routine using these products:\n\n${JSON.stringify(
+    productsData,
+    null,
+    2
+  )}`;
+
+  /* Add to conversation history */
+  conversationHistory.push({
+    role: "user",
+    content: routineRequest,
+  });
+
+  /* Display loading message with typing indicator */
+  chatWindow.innerHTML += `<div class="message assistant-message typing-indicator" id="typingIndicator"><span class="typing-dots">Thinking<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span></div>`;
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+
+  /* Add "just a moment" message after a short delay */
+  setTimeout(() => {
+    const typingMsg = document.getElementById("typingIndicator");
+    if (typingMsg) {
+      typingMsg.innerHTML = `<span class="typing-dots">Just a moment<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>`;
+    }
+  }, 2000);
+
+  try {
+    /* Make request to OpenAI API with full conversation history */
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: conversationHistory,
+      }),
+    });
+
+    /* Parse the response from OpenAI */
+    const data = await response.json();
+
+    /* Check if we got a valid response */
+    if (data.choices && data.choices[0] && data.choices[0].message) {
+      const routineMessage = data.choices[0].message.content;
+
+      /* Add assistant response to conversation history */
+      conversationHistory.push({
+        role: "assistant",
+        content: routineMessage,
+      });
+
+      /* Remove typing indicator */
+      const typingIndicator = document.getElementById("typingIndicator");
+      if (typingIndicator) {
+        typingIndicator.remove();
+      }
+
+      chatWindow.innerHTML += `<div class="message assistant-message"><div class="message-label">Your Personalized Routine</div><div class="routine-content">${routineMessage}</div></div>`;
+    } else {
+      /* Remove typing indicator */
+      const typingIndicator = document.getElementById("typingIndicator");
+      if (typingIndicator) {
+        typingIndicator.remove();
+      }
+      chatWindow.innerHTML += `<div class="message system-message">Unable to generate routine. Please try again.</div>`;
+    }
+
+    /* Auto-scroll to bottom of chat window */
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  } catch (error) {
+    /* Remove typing indicator */
+    const typingIndicator = document.getElementById("typingIndicator");
+    if (typingIndicator) {
+      typingIndicator.remove();
+    }
+    /* Display error message if API request fails */
+    chatWindow.innerHTML += `<div class="message system-message">Error: ${error.message}</div>`;
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  }
+});
+
 /* Filter and display products when category changes */
 categoryFilter.addEventListener("change", async (e) => {
   const products = await loadProducts();
@@ -143,13 +311,31 @@ chatForm.addEventListener("submit", async (e) => {
   const userMessage = userInput.value;
 
   /* Display user's message in chat window */
-  chatWindow.innerHTML += `<p><strong>You:</strong> ${userMessage}</p>`;
+  chatWindow.innerHTML += `<div class="message user-message">${userMessage}</div>`;
 
   /* Clear the input field */
   userInput.value = "";
 
+  /* Add user message to conversation history */
+  conversationHistory.push({
+    role: "user",
+    content: userMessage,
+  });
+
+  /* Show typing indicator */
+  chatWindow.innerHTML += `<div class="message assistant-message typing-indicator" id="chatTypingIndicator"><span class="typing-dots">Thinking<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span></div>`;
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+
+  /* Add "just a moment" message after a short delay */
+  setTimeout(() => {
+    const typingMsg = document.getElementById("chatTypingIndicator");
+    if (typingMsg) {
+      typingMsg.innerHTML = `<span class="typing-dots">Just a moment<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>`;
+    }
+  }, 2000);
+
   try {
-    /* Make request to OpenAI API */
+    /* Make request to OpenAI API with full conversation history */
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -158,17 +344,7 @@ chatForm.addEventListener("submit", async (e) => {
       },
       body: JSON.stringify({
         model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a helpful beauty advisor for L'Oréal products. Help users build skincare and beauty routines.",
-          },
-          {
-            role: "user",
-            content: userMessage,
-          },
-        ],
+        messages: conversationHistory,
       }),
     });
 
@@ -178,15 +354,43 @@ chatForm.addEventListener("submit", async (e) => {
     /* Check if we got a valid response */
     if (data.choices && data.choices[0] && data.choices[0].message) {
       const assistantMessage = data.choices[0].message.content;
-      chatWindow.innerHTML += `<p><strong>Assistant:</strong> ${assistantMessage}</p>`;
+
+      /* Add assistant response to conversation history */
+      conversationHistory.push({
+        role: "assistant",
+        content: assistantMessage,
+      });
+
+      /* Remove typing indicator */
+      const chatTypingIndicator = document.getElementById(
+        "chatTypingIndicator"
+      );
+      if (chatTypingIndicator) {
+        chatTypingIndicator.remove();
+      }
+
+      chatWindow.innerHTML += `<div class="message assistant-message">${assistantMessage}</div>`;
     } else {
-      chatWindow.innerHTML += `<p><strong>Error:</strong> Unable to get response from API</p>`;
+      /* Remove typing indicator */
+      const chatTypingIndicator = document.getElementById(
+        "chatTypingIndicator"
+      );
+      if (chatTypingIndicator) {
+        chatTypingIndicator.remove();
+      }
+      chatWindow.innerHTML += `<div class="message system-message">Unable to get response from API</div>`;
     }
 
     /* Auto-scroll to bottom of chat window */
     chatWindow.scrollTop = chatWindow.scrollHeight;
   } catch (error) {
+    /* Remove typing indicator */
+    const chatTypingIndicator = document.getElementById("chatTypingIndicator");
+    if (chatTypingIndicator) {
+      chatTypingIndicator.remove();
+    }
     /* Display error message if API request fails */
-    chatWindow.innerHTML += `<p><strong>Error:</strong> ${error.message}</p>`;
+    chatWindow.innerHTML += `<div class="message system-message">Error: ${error.message}</div>`;
+    chatWindow.scrollTop = chatWindow.scrollHeight;
   }
 });

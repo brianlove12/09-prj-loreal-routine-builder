@@ -73,12 +73,115 @@ body {
 
 .chat-window {
   padding: 20px;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.5;
   height: 250px;
   overflow-y: auto;
   background: #fafafa;
   margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* message bubbles */
+.message {
+  padding: 12px 16px;
+  border-radius: 18px;
+  max-width: 80%;
+  word-wrap: break-word;
+  animation: messageSlideIn 0.3s ease;
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.user-message {
+  background: #000;
+  color: #fff;
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+.assistant-message {
+  background: #fff;
+  color: #333;
+  align-self: flex-start;
+  border: 1px solid #ddd;
+  border-bottom-left-radius: 4px;
+}
+
+.system-message {
+  background: #f0f0f0;
+  color: #666;
+  align-self: center;
+  font-size: 14px;
+  text-align: center;
+  max-width: 90%;
+  border-radius: 12px;
+}
+
+.message-label {
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+/* typing indicator */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+}
+
+.typing-dots {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.typing-dots .dot {
+  animation: typingDot 1.4s infinite;
+  opacity: 0;
+}
+
+.typing-dots .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dots .dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.typing-dots .dot:nth-child(4) {
+  animation-delay: 0.6s;
+}
+
+@keyframes typingDot {
+  0%,
+  60%,
+  100% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+.routine-content {
+  background: transparent;
+  padding: 0;
+  margin-top: 8px;
+  border-left: none;
+  white-space: pre-wrap;
+  line-height: 1.6;
 }
 
 /* placeholder message */
@@ -188,6 +291,7 @@ body {
   min-height: 160px;
   cursor: pointer;
   transition: all 0.3s;
+  position: relative;
 }
 
 .product-card:hover {
@@ -223,6 +327,29 @@ body {
 .product-card p {
   font-size: 14px;
   color: #666;
+}
+
+.info-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 16px;
+}
+
+.info-btn:hover {
+  background: #000;
+  transform: scale(1.1);
 }
 
 /* selected products */
@@ -294,4 +421,97 @@ body {
 
 .generate-btn i {
   margin-right: 8px;
+}
+
+/* modal */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.show {
+  display: flex;
+}
+
+.modal-content {
+  background: #fff;
+  padding: 30px;
+  border-radius: 8px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
+  animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+  from {
+    transform: translateY(-50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-close {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.modal-close:hover {
+  color: #000;
+}
+
+.modal-product {
+  text-align: center;
+}
+
+.modal-product img {
+  width: 200px;
+  height: 200px;
+  object-fit: contain;
+  margin-bottom: 20px;
+}
+
+.modal-product h3 {
+  font-size: 22px;
+  margin-bottom: 8px;
+  color: #000;
+}
+
+.modal-brand {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 20px;
+  font-weight: 500;
+}
+
+.modal-description {
+  font-size: 16px;
+  line-height: 1.6;
+  color: #333;
+  text-align: left;
 }
