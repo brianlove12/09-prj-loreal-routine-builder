@@ -449,6 +449,16 @@ categoryFilter.addEventListener("change", async (e) => {
 
   currentCategory = e.target.value;
 
+  /* If no category selected, show placeholder and return */
+  if (!currentCategory) {
+    productsContainer.innerHTML = `
+      <div class="placeholder-message">
+        Select a category to view products
+      </div>
+    `;
+    return;
+  }
+
   /* Filter and display products based on both category and search */
   const filteredProducts = filterProducts();
   displayProducts(filteredProducts);

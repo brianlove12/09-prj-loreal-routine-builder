@@ -461,7 +461,7 @@ body {
 
 .chat-form button {
   font-size: 18px;
-  background: #000;
+  background: #ff003b;
   color: #fff;
   border: none;
   padding: 12px;
@@ -476,7 +476,7 @@ body {
 }
 
 .chat-form button:hover {
-  background: #666666;
+  background: #cc0030;
 }
 
 .chat-form button:focus {
@@ -768,6 +768,8 @@ body {
   width: 100%;
   height: 100%;
   background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   align-items: center;
   justify-content: center;
 }
