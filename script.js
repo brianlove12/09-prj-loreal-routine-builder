@@ -4,16 +4,121 @@ const productsContainer = document.getElementById("productsContainer");
 const chatForm = document.getElementById("chatForm");
 const chatWindow = document.getElementById("chatWindow");
 const selectedProductsList = document.getElementById("selectedProductsList");
+const productSearch = document.getElementById("productSearch");
+const clearSearchBtn = document.getElementById("clearSearch");
+const languageToggle = document.getElementById("languageToggle");
+const languageText = document.getElementById("languageText");
+
+/* Cloudflare Worker endpoint - UPDATE THIS WITH YOUR WORKER URL */
+const WORKER_ENDPOINT = "https://lorealworker1.balove12.workers.dev/";
 
 /* Array to store selected products */
 let selectedProducts = [];
+
+/* Store all products and current filter state */
+let allProducts = [];
+let currentCategory = "";
+let currentSearchTerm = "";
+
+/* Language direction toggle */
+languageToggle.addEventListener("click", () => {
+  const html = document.documentElement;
+  const currentDir = html.getAttribute("dir");
+
+  if (currentDir === "rtl") {
+    html.setAttribute("dir", "ltr");
+    html.setAttribute("lang", "en");
+    languageText.textContent = "LTR";
+  } else {
+    html.setAttribute("dir", "rtl");
+    html.setAttribute("lang", "ar");
+    languageText.textContent = "RTL";
+  }
+
+  /* Save preference to localStorage */
+  localStorage.setItem("textDirection", html.getAttribute("dir"));
+});
+
+/* Load saved language direction on page load */
+function loadLanguageDirection() {
+  const savedDir = localStorage.getItem("textDirection");
+  if (savedDir) {
+    const html = document.documentElement;
+    html.setAttribute("dir", savedDir);
+    html.setAttribute("lang", savedDir === "rtl" ? "ar" : "en");
+    languageText.textContent = savedDir === "rtl" ? "RTL" : "LTR";
+  }
+}
+
+/* Load selected products from localStorage on page load */
+function loadSelectedProducts() {
+  const saved = localStorage.getItem("selectedProducts");
+  if (saved) {
+    try {
+      selectedProducts = JSON.parse(saved);
+      updateSelectedProductsDisplay();
+      /* Update visual state of product cards if they exist */
+      selectedProducts.forEach((product) => {
+        const card = document.querySelector(
+          `[data-product-id="${product.id}"]`
+        );
+        if (card) {
+          card.classList.add("selected");
+        }
+      });
+    } catch (error) {
+      console.error("Error loading selected products:", error);
+      selectedProducts = [];
+    }
+  }
+}
+
+/* Save selected products to localStorage */
+function saveSelectedProducts() {
+  try {
+    localStorage.setItem("selectedProducts", JSON.stringify(selectedProducts));
+  } catch (error) {
+    console.error("Error saving selected products:", error);
+  }
+}
+
+/* Format AI response text with better structure */
+function formatAIResponse(text) {
+  /* Convert markdown-style formatting to HTML */
+  let formatted = text
+    /* Convert links [text](url) to HTML anchor tags */
+    .replace(
+      /\[(.+?)\]\((.+?)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+    )
+    /* Convert **bold** to <strong> */
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    /* Convert numbered lists */
+    .replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>")
+    /* Convert bullet points */
+    .replace(/^[\-\*]\s+(.+)$/gm, "<li>$1</li>")
+    /* Convert line breaks to paragraphs */
+    .split("\n\n")
+    .map((para) => {
+      if (para.includes("<li>")) {
+        /* Wrap lists in <ol> or <ul> */
+        const isNumbered = /^\d+\./.test(para);
+        const listTag = isNumbered ? "ol" : "ul";
+        return `<${listTag}>${para}</${listTag}>`;
+      }
+      return para.trim() ? `<p>${para.trim()}</p>` : "";
+    })
+    .join("");
+
+  return formatted;
+}
 
 /* Array to store conversation history for context */
 let conversationHistory = [
   {
     role: "system",
     content:
-      "You are a professional beauty advisor for L'Oréal products. Help users with skincare, haircare, makeup, fragrance, and beauty routines. Provide helpful, accurate advice based on the conversation context. Only answer questions related to beauty, skincare, haircare, makeup, and wellness topics.",
+      "You are a professional beauty advisor for L'Oréal products with access to current information. Help users with skincare, haircare, makeup, fragrance, and beauty routines. When providing recommendations, search for the latest product information, reviews, and beauty trends. Always include sources and links when you reference specific information. Provide helpful, accurate, and up-to-date advice. Only answer questions related to beauty, skincare, haircare, makeup, and wellness topics.",
   },
 ];
 
@@ -28,11 +133,48 @@ productsContainer.innerHTML = `
 async function loadProducts() {
   const response = await fetch("products.json");
   const data = await response.json();
-  return data.products;
+  allProducts = data.products;
+  return allProducts;
+}
+
+/* Filter products based on category and search term */
+function filterProducts() {
+  let filtered = allProducts;
+
+  /* Filter by category if one is selected */
+  if (currentCategory) {
+    filtered = filtered.filter(
+      (product) => product.category === currentCategory
+    );
+  }
+
+  /* Filter by search term if one is entered */
+  if (currentSearchTerm) {
+    const searchLower = currentSearchTerm.toLowerCase();
+    filtered = filtered.filter(
+      (product) =>
+        product.name.toLowerCase().includes(searchLower) ||
+        product.brand.toLowerCase().includes(searchLower) ||
+        product.category.toLowerCase().includes(searchLower) ||
+        product.description.toLowerCase().includes(searchLower)
+    );
+  }
+
+  return filtered;
 }
 
 /* Create HTML for displaying product cards */
 function displayProducts(products) {
+  /* Show appropriate message if no products match filters */
+  if (products.length === 0) {
+    productsContainer.innerHTML = `
+      <div class="placeholder-message">
+        No products found matching your search criteria
+      </div>
+    `;
+    return;
+  }
+
   productsContainer.innerHTML = products
     .map(
       (product) => `
@@ -96,6 +238,9 @@ function toggleProductSelection(card, products) {
 
   /* Update the selected products display */
   updateSelectedProductsDisplay();
+
+  /* Save to localStorage */
+  saveSelectedProducts();
 }
 
 /* Update the display of selected products */
@@ -144,6 +289,9 @@ function removeProduct(productId) {
 
   /* Update the display */
   updateSelectedProductsDisplay();
+
+  /* Save to localStorage */
+  saveSelectedProducts();
 }
 
 /* Show product description in modal */
@@ -232,16 +380,17 @@ generateRoutineBtn.addEventListener("click", async () => {
   }, 2000);
 
   try {
-    /* Make request to OpenAI API with full conversation history */
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    /* Make request to Cloudflare Worker instead of OpenAI directly */
+    const response = await fetch(WORKER_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model: "gpt-4o",
         messages: conversationHistory,
+        /* Enable web search for real-time information */
+        store: true,
       }),
     });
 
@@ -264,7 +413,10 @@ generateRoutineBtn.addEventListener("click", async () => {
         typingIndicator.remove();
       }
 
-      chatWindow.innerHTML += `<div class="message assistant-message"><div class="message-label">Your Personalized Routine</div><div class="routine-content">${routineMessage}</div></div>`;
+      /* Format the response for better readability */
+      const formattedMessage = formatAIResponse(routineMessage);
+
+      chatWindow.innerHTML += `<div class="message assistant-message"><div class="message-label">Your Personalized Routine</div><div class="routine-content">${formattedMessage}</div></div>`;
     } else {
       /* Remove typing indicator */
       const typingIndicator = document.getElementById("typingIndicator");
@@ -290,16 +442,99 @@ generateRoutineBtn.addEventListener("click", async () => {
 
 /* Filter and display products when category changes */
 categoryFilter.addEventListener("change", async (e) => {
-  const products = await loadProducts();
-  const selectedCategory = e.target.value;
+  /* Load products if not already loaded */
+  if (allProducts.length === 0) {
+    await loadProducts();
+  }
 
-  /* filter() creates a new array containing only products 
-     where the category matches what the user selected */
-  const filteredProducts = products.filter(
-    (product) => product.category === selectedCategory
-  );
+  currentCategory = e.target.value;
 
+  /* Filter and display products based on both category and search */
+  const filteredProducts = filterProducts();
   displayProducts(filteredProducts);
+
+  /* Restore selected state for products that were previously selected */
+  selectedProducts.forEach((product) => {
+    const card = document.querySelector(`[data-product-id="${product.id}"]`);
+    if (card) {
+      card.classList.add("selected");
+    }
+  });
+});
+
+/* Search products as user types */
+productSearch.addEventListener("input", async (e) => {
+  currentSearchTerm = e.target.value.trim();
+
+  /* Show/hide clear button */
+  clearSearchBtn.style.display = currentSearchTerm ? "flex" : "none";
+
+  /* Load products if not already loaded */
+  if (allProducts.length === 0) {
+    await loadProducts();
+  }
+
+  /* Filter and display products based on both category and search */
+  const filteredProducts = filterProducts();
+  displayProducts(filteredProducts);
+
+  /* Restore selected state for products that were previously selected */
+  selectedProducts.forEach((product) => {
+    const card = document.querySelector(`[data-product-id="${product.id}"]`);
+    if (card) {
+      card.classList.add("selected");
+    }
+  });
+});
+
+/* Clear search input */
+clearSearchBtn.addEventListener("click", async () => {
+  productSearch.value = "";
+  currentSearchTerm = "";
+  clearSearchBtn.style.display = "none";
+
+  /* Load products if not already loaded */
+  if (allProducts.length === 0) {
+    await loadProducts();
+  }
+
+  /* Filter and display products based on category only */
+  const filteredProducts = filterProducts();
+  displayProducts(filteredProducts);
+
+  /* Restore selected state for products that were previously selected */
+  selectedProducts.forEach((product) => {
+    const card = document.querySelector(`[data-product-id="${product.id}"]`);
+    if (card) {
+      card.classList.add("selected");
+    }
+  });
+
+  /* Focus back on search input */
+  productSearch.focus();
+});
+
+/* Load selected products from localStorage when page loads */
+loadSelectedProducts();
+
+/* Load saved language direction when page loads */
+loadLanguageDirection();
+
+/* Clear all selected products */
+const clearAllBtn = document.getElementById("clearAll");
+
+clearAllBtn.addEventListener("click", () => {
+  /* Remove selected class from all product cards */
+  document.querySelectorAll(".product-card.selected").forEach((card) => {
+    card.classList.remove("selected");
+  });
+
+  /* Clear the selected products array */
+  selectedProducts = [];
+
+  /* Update display and localStorage */
+  updateSelectedProductsDisplay();
+  saveSelectedProducts();
 });
 
 /* Chat form submission handler - connects to OpenAI API */
@@ -335,16 +570,17 @@ chatForm.addEventListener("submit", async (e) => {
   }, 2000);
 
   try {
-    /* Make request to OpenAI API with full conversation history */
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    /* Make request to Cloudflare Worker instead of OpenAI directly */
+    const response = await fetch(WORKER_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model: "gpt-4o",
         messages: conversationHistory,
+        /* Enable web search for real-time information */
+        store: true,
       }),
     });
 
@@ -369,7 +605,10 @@ chatForm.addEventListener("submit", async (e) => {
         chatTypingIndicator.remove();
       }
 
-      chatWindow.innerHTML += `<div class="message assistant-message">${assistantMessage}</div>`;
+      /* Format the response for better readability */
+      const formattedMessage = formatAIResponse(assistantMessage);
+
+      chatWindow.innerHTML += `<div class="message assistant-message">${formattedMessage}</div>`;
     } else {
       /* Remove typing indicator */
       const chatTypingIndicator = document.getElementById(
